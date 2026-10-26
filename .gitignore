@@ -1,0 +1,13 @@
+
+.venv/
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+
+# Reproducible generated datasets
+data/generated/
+
+# Generated model artifacts
+artifacts/
