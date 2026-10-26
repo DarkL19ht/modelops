@@ -75,3 +75,23 @@ for demonstrating machine learning monitoring workflows.
 
 It must not be interpreted as evidence of real-world
 customer churn behaviour.
+
+
+### Evaluate Performance
+
+```bash
+python -m src.modelops.performance
+```
+
+### Monitoring Outputs
+
+- 'reports/performance_report.md'
+- 'repprts/performance_report.json'
+- 'reports/performance_history.jsonl'
+
+
+The demonstration uses fully labeled synthetic cohorts.
+The initial baseline is derived from a held-out historical dataset.
+
+Changes in metrics may reflect changes in outcome prevalence, the incoming population, or model behaviour.
+A drift alert alone does not justify automatic model replacement.
