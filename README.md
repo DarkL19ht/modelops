@@ -32,6 +32,28 @@ The project will implement:
 - Saved model and evaluation metrics
 - Initial automated tests
 
+
+## Data Drift Monitoring
+
+ModelOps compares historical model-development data with
+incoming observations to identify changes in input-feature
+distributions.
+
+The monitoring engine implements:
+
+- Population Stability Index (PSI)
+- Reference-based quantile binning
+- KS distribution comparison for numeric features
+- Categorical distribution comparison
+- Configurable drift thresholds
+- Feature validation and error handling
+- JSON and Markdown monitoring reports
+
+### Run the Monitor
+
+```bash
+python -m src.modelops.monitor
+
 ## Getting Started
 
 Requires Python 3.12.

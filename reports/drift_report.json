@@ -1,0 +1,62 @@
+{
+  "reference_rows": 5000,
+  "incoming_rows": 1200,
+  "psi_threshold": 0.2,
+  "drifted_features": [
+    "monthly_spend",
+    "support_tickets_90d",
+    "logins_30d"
+  ],
+  "features": [
+    {
+      "feature": "tenure_months",
+      "type": "numeric",
+      "psi": 0.005842,
+      "reference_mean": 36.4072,
+      "incoming_mean": 36.8875,
+      "ks_statistic": 0.0238,
+      "ks_pvalue": 0.6343035968831858,
+      "status": "stable"
+    },
+    {
+      "feature": "monthly_spend",
+      "type": "numeric",
+      "psi": 0.414375,
+      "reference_mean": 70.3656,
+      "incoming_mean": 84.7261,
+      "ks_statistic": 0.272633,
+      "ks_pvalue": 4.6180081475066265e-64,
+      "status": "drift"
+    },
+    {
+      "feature": "support_tickets_90d",
+      "type": "numeric",
+      "psi": 0.950631,
+      "reference_mean": 0.8084,
+      "incoming_mean": 2.05,
+      "ks_statistic": 0.421667,
+      "ks_pvalue": 1.4661605909486022e-156,
+      "status": "drift"
+    },
+    {
+      "feature": "logins_30d",
+      "type": "numeric",
+      "psi": 5.540084,
+      "reference_mean": 15.07,
+      "incoming_mean": 8.0183,
+      "ks_statistic": 0.714167,
+      "ks_pvalue": 0.0,
+      "status": "drift"
+    },
+    {
+      "feature": "monthly_contract",
+      "type": "categorical",
+      "psi": 0.134425,
+      "reference_mean": 0.551,
+      "incoming_mean": 0.7258,
+      "ks_statistic": null,
+      "ks_pvalue": null,
+      "status": "stable"
+    }
+  ]
+}
