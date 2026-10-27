@@ -11,3 +11,9 @@ data/generated/
 
 # Generated model artifacts
 artifacts/
+
+# Local MLflow experiment tracking
+mlflow.db
+mflow.db-*
+mlruns/
+mlartifacts/

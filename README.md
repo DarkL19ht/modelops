@@ -144,19 +144,70 @@ Promotion is permitted only when all acceptance checks pass.
 - `artifacts/candidates/` — trained challenger
 - `artifacts/archive/` — previous champion versions
 
-### Safety and Limitations
 
-The pipeline separates challenger training observations
-from evaluation observations and rejects candidates
-that breach configured model performance safeguards.
+## Experiment Tracking and Model Registry
 
-The incoming evaluation cohort was previously examined
-during exploratory monitoring and should not be
-considered an independent final external test set.
+ModelOps integrates MLflow to track and compare
+champion and challenger machine-learning models.
 
-Promotion currently operates on local model files and
-must be requested explicitly. Scheduled execution,
-centralised model registry management, and deployment
-automation are planned improvements.
+The experiment-tracking workflow records:
 
-All experiments use synthetic data.
+- Historical and incoming holdout metrics
+- Training and evaluation cohort sizes
+- Model training configuration
+- Source dataset fingerprints
+- Champion and challenger model artifacts
+- Retraining decisions and evaluation reports
+- Registered challenger model versions
+
+### Run a Tracked Experiment
+
+```bash
+python -m src.modelops.track_experiment
+```
+
+### Register a Candidate Version
+
+```bash
+python -m src.modelops.track_experiment --register-candidate
+```
+
+Candidate registration does not promote or deploy a model.
+
+### Open the Tracking Dashboard
+
+```bash
+mlflow server \
+  --backend-store-uri sqlite:///mlflow.db \
+  --default-artifact-root "$PWD/mlruns" \
+  --host 127.0.0.1 \
+  --port 5000
+```
+
+Open `http://127.0.0.1:5000` and select
+the `modelops-churn-retraining` experiment.
+
+### Model Management
+
+The local MLflow backend uses SQLite for experiment
+metadata and local storage for model artifacts.
+
+Candidate model versions are registered under
+`modelops-churn-candidates`.
+
+Registration is separate from model promotion.
+The current inference champion remains managed by
+the guarded local promotion workflow.
+
+### Limitations
+
+- Tracking and registry storage are local to the
+  development machine.
+- Runs and registry entries are not automatically
+  synchronised with live deployments.
+- Models are evaluated using synthetic customer data.
+- Previously inspected evaluation cohorts are not
+  independent external validation datasets.
+- MLflow is used for experiment comparison and
+  candidate versioning, not yet production serving.
+
