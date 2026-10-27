@@ -1,0 +1,104 @@
+{
+  "run_id": "3290f6392f20",
+  "generated_at_utc": "2026-10-27T01:13:25+00:00",
+  "champion_sha256_before": "c8997b2846b830f1ba68df37a3733c6b2a404624abd62c4303e0b725ce286f6d",
+  "champion_sha256_after": "f1d8676c93b37a26fc362e41a8be47b535601bac981eb42870cc2925cdc11f2a",
+  "champion_path": "/Users/user/Documents/modelops/artifacts/churn_model.joblib",
+  "candidate_path": "/Users/user/Documents/modelops/artifacts/candidates/churn_candidate.joblib",
+  "cohorts": {
+    "historical_training_rows": 4000,
+    "historical_holdout_rows": 1000,
+    "incoming_training_rows": 960,
+    "incoming_holdout_rows": 240
+  },
+  "evaluation": {
+    "reference_holdout": {
+      "champion": {
+        "labeled_rows": 1000,
+        "actual_churn_rate": 0.169,
+        "predicted_churn_rate": 0.392,
+        "accuracy": 0.701,
+        "precision": 0.3342,
+        "recall": 0.7751,
+        "f1": 0.467,
+        "roc_auc": 0.7968,
+        "confusion_matrix": {
+          "tn": 570,
+          "fp": 261,
+          "fn": 38,
+          "tp": 131
+        }
+      },
+      "challenger": {
+        "labeled_rows": 1000,
+        "actual_churn_rate": 0.169,
+        "predicted_churn_rate": 0.292,
+        "accuracy": 0.761,
+        "precision": 0.3801,
+        "recall": 0.6568,
+        "f1": 0.4816,
+        "roc_auc": 0.7967,
+        "confusion_matrix": {
+          "tn": 650,
+          "fp": 181,
+          "fn": 58,
+          "tp": 111
+        }
+      }
+    },
+    "incoming_holdout": {
+      "champion": {
+        "labeled_rows": 240,
+        "actual_churn_rate": 0.4917,
+        "predicted_churn_rate": 0.8958,
+        "accuracy": 0.5625,
+        "precision": 0.5302,
+        "recall": 0.9661,
+        "f1": 0.6847,
+        "roc_auc": 0.7851,
+        "confusion_matrix": {
+          "tn": 21,
+          "fp": 101,
+          "fn": 4,
+          "tp": 114
+        }
+      },
+      "challenger": {
+        "labeled_rows": 240,
+        "actual_churn_rate": 0.4917,
+        "predicted_churn_rate": 0.7917,
+        "accuracy": 0.6333,
+        "precision": 0.5789,
+        "recall": 0.9322,
+        "f1": 0.7143,
+        "roc_auc": 0.7859,
+        "confusion_matrix": {
+          "tn": 42,
+          "fp": 80,
+          "fn": 8,
+          "tp": 110
+        }
+      }
+    }
+  },
+  "decision": {
+    "eligible": true,
+    "checks": {
+      "incoming_f1_gain": true,
+      "reference_accuracy_guardrail": true,
+      "reference_auc_guardrail": true,
+      "incoming_auc_guardrail": true
+    },
+    "reasons": [],
+    "thresholds": {
+      "min_incoming_f1_gain": 0.01,
+      "max_reference_accuracy_drop": 0.03,
+      "max_reference_auc_drop": 0.02,
+      "max_incoming_auc_drop": 0.02
+    }
+  },
+  "promotion": {
+    "status": "promoted",
+    "backup": "/Users/user/Documents/modelops/artifacts/archive/champion_20261027T011325Z_90f58f7b.joblib"
+  }
+}

@@ -95,3 +95,68 @@ The initial baseline is derived from a held-out historical dataset.
 
 Changes in metrics may reflect changes in outcome prevalence, the incoming population, or model behaviour.
 A drift alert alone does not justify automatic model replacement.
+
+
+## Guarded Model Retraining
+
+ModelOps supports retraining a customer churn classifier
+using newly available labeled customer observations.
+
+The system trains a challenger model and compares it
+with the active champion model before permitting promotion.
+
+### Retraining Workflow
+
+1. Load historical training data and newly labeled data.
+2. Recreate the historical training and holdout partitions.
+3. Separate incoming data into training and evaluation sets.
+4. Train a challenger using historical and incoming training data.
+5. Evaluate the champion and challenger on identical holdouts.
+6. Apply configurable performance acceptance checks.
+7. Archive the previous champion before explicit promotion.
+8. Generate evaluation reports and a retraining audit history.
+
+### Run a Dry-Run Evaluation
+
+```bash
+python -m src.modelops.retrain
+```
+
+A dry run never replaces the active model.
+
+### Promote an Eligible Candidate
+
+```bash
+python -m src.modelops.retrain --promote
+```
+
+Promotion is permitted only when all acceptance checks pass.
+
+### Retraining Reports
+
+- `reports/retraining_decision.md`
+- `reports/retraining_decision.json`
+- `reports/retraining_history.jsonl`
+
+### Model Artifacts
+
+- `artifacts/churn_model.joblib` — active champion
+- `artifacts/candidates/` — trained challenger
+- `artifacts/archive/` — previous champion versions
+
+### Safety and Limitations
+
+The pipeline separates challenger training observations
+from evaluation observations and rejects candidates
+that breach configured model performance safeguards.
+
+The incoming evaluation cohort was previously examined
+during exploratory monitoring and should not be
+considered an independent final external test set.
+
+Promotion currently operates on local model files and
+must be requested explicitly. Scheduled execution,
+centralised model registry management, and deployment
+automation are planned improvements.
+
+All experiments use synthetic data.
