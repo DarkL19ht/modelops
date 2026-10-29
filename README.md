@@ -199,15 +199,91 @@ Registration is separate from model promotion.
 The current inference champion remains managed by
 the guarded local promotion workflow.
 
+
+## Model Serving API
+
+ModelOps provides a FastAPI inference service that
+serves the active, locally promoted churn classifier.
+
+The service supports:
+
+- Single-customer churn predictions
+- Batch predictions for up to 100 customers
+- Pydantic input validation
+- Model availability and health checks
+- Model artifact SHA-256 fingerprints
+- Token-protected model reloading
+- Safe in-memory model replacement
+- Automated API tests
+
+### Start the API Locally
+
+Activate the Python virtual environment.
+
+```bash
+source .venv/bin/activate
+```
+
+Load a locally configured admin token if model
+reloading is required.
+
+```bash
+source .env.local
+```
+
+Run the development server:
+
+```bash
+python -m uvicorn src.modelops.api:app \
+  --host 127.0.0.1 \
+  --port 8000 \
+  --reload
+```
+
+The interactive API documentation is available at:
+
+http://127.0.0.1:8000/docs
+
+### API Endpoints
+
+| Method | Route | Purpose |
+|---|---|---|
+| GET | /health | Model availability |
+| GET | /model | Active model metadata |
+| POST | /predict | Single-customer prediction |
+| POST | /predict/batch | Batch prediction |
+| POST | /admin/reload | Reload the active model |
+
+### Model Deployment Behaviour
+
+The inference service loads the model from
+`artifacts/churn_model.joblib`.
+
+Retraining a challenger or registering a model
+version in MLflow does not automatically change
+the model served by the API.
+
+A model must first be explicitly promoted through
+the guarded retraining workflow.
+
+The running inference service can then reload
+the updated champion using the protected reload
+endpoint.
+
 ### Limitations
 
-- Tracking and registry storage are local to the
-  development machine.
-- Runs and registry entries are not automatically
-  synchronised with live deployments.
-- Models are evaluated using synthetic customer data.
-- Previously inspected evaluation cohorts are not
-  independent external validation datasets.
-- MLflow is used for experiment comparison and
-  candidate versioning, not yet production serving.
+The API currently runs locally and uses synthetic
+training data. Its predictions should not be used
+to make real customer decisions.
+
+The admin reload endpoint uses a shared token,
+and additional authentication, auditing, rate
+limiting, monitoring, and deployment safeguards
+would be required for public production use.
+
+The service is designed for a single local worker.
+Multiple worker processes would require coordinated
+model-version management.
+
+
 
