@@ -270,6 +270,44 @@ The running inference service can then reload
 the updated champion using the protected reload
 endpoint.
 
+
+## Interactive Monitoring Dashboard
+
+ModelOps includes a Streamlit monitoring workbench
+that combines model observability and inference.
+
+### Features
+
+- System overview and active champion identification
+- PSI-based feature drift visualisation
+- Historical-versus-incoming model performance
+- Retraining decision and acceptance-check review
+- Interactive customer churn predictions
+- Connection to the FastAPI inference service
+
+### Launch Locally
+
+Start FastAPI in one terminal:
+
+    python -m uvicorn src.modelops.api:app \
+      --host 127.0.0.1 --port 8000
+
+Start Streamlit in another:
+
+    python -m streamlit run dashboard/app.py \
+      --server.address 127.0.0.1 \
+      --server.port 8501
+
+Open http://127.0.0.1:8501.
+
+The dashboard reads locally generated monitoring reports
+and queries the active champion through the FastAPI API.
+
+It does not directly promote or replace models.
+
+The sample application uses synthetic customer data
+and is intended for engineering demonstration.
+
 ### Limitations
 
 The API currently runs locally and uses synthetic
