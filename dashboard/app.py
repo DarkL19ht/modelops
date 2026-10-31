@@ -1,7 +1,14 @@
-#Build the dashboard interface
 """Interactive ModelOps monitoring and prediction dashboard."""
 
 import os
+import sys
+from pathlib import Path
+
+# Make the repository root importable on Streamlit Cloud.
+ROOT = Path(__file__).resolve().parents[1]
+
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 import pandas as pd
 import requests
@@ -13,7 +20,6 @@ from src.modelops.dashboard_data import (
     performance_table,
     retraining_table,
 )
-from src.modelops.train import ROOT
 
 
 API_URL = os.getenv(
@@ -118,7 +124,11 @@ with st.sidebar:
     if health is not None:
         st.success("Inference engine online")
     else:
-        st.warning("Inference engine offline")
+        st.info(
+            "The inference engine is offline or waking up."
+            "On the current hosting, startup can take about a minute."
+            "Use Refresh reports to check again."
+        )
 
     st.divider()
 
@@ -138,6 +148,11 @@ st.markdown(
 )
 
 st.title("ModelOps Monitoring Workbench")
+st.caption(
+    "Portfolio demonstration using synthetic customer data."
+    "Monitoring reports are generated snapshots, not live"
+    "production telemetry"
+)
 
 st.write(
     "Monitor customer data drift, model performance, "
