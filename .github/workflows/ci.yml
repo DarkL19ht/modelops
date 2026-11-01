@@ -1,0 +1,103 @@
+name: ModelOps CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-validate:
+    name: Test ML pipelines
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Check Python source syntax
+        run: |
+          python -m compileall -q src dashboard
+
+      - name: Generate synthetic datasets
+        run: |
+          python -m src.modelops.generate_data
+
+      - name: Train baseline model
+        run: |
+          python -m src.modelops.train
+
+      - name: Run automated tests
+        run: |
+          python -m pytest -q
+
+      - name: Verify monitoring pipelines
+        run: |
+          python -m src.modelops.monitor
+          python -m src.modelops.predict
+          python -m src.modelops.performance
+          python -m src.modelops.retrain
+
+      - name: Verify serving API
+        run: |
+          python - <<'PY'
+          from fastapi.testclient import TestClient
+          from src.modelops.api import create_app
+
+          customer = {
+              "customer_id": "ci-customer",
+              "tenure_months": 12,
+              "monthly_spend": 75.5,
+              "support_tickets_90d": 2,
+              "logins_30d": 10,
+              "monthly_contract": 1,
+          }
+
+          with TestClient(create_app()) as client:
+              health = client.get("/health")
+              assert health.status_code == 200
+
+              response = client.post(
+                  "/predict",
+                  json=customer,
+              )
+
+              assert response.status_code == 200
+
+              result = response.json()
+              assert result["predicted_churn"] in (0, 1)
+              assert 0 <= result["churn_probability"] <= 1
+
+          print("ModelOps API smoke test passed.")
+          PY
+
+      - name: Upload example monitoring reports
+        if: always()
+        uses: action/upload-artifact@v4
+        with:
+          name: modelops-monitoring-reports
+          path: |
+            reports/drift_report.json
+            reports/drift_report.md
+            reports/performance_reports.json
+            reports/performance_reports.md
+            reports/retraining_decidion.json
+            reports/retraining_decidion.md
+          if-no-files-found: ignore
+          retention-days: 7
