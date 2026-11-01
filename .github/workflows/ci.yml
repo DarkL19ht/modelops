@@ -89,15 +89,15 @@ jobs:
 
       - name: Upload example monitoring reports
         if: always()
-        uses: action/upload-artifact@v4
+        uses: actions/upload-artifact@v4
         with:
           name: modelops-monitoring-reports
           path: |
             reports/drift_report.json
             reports/drift_report.md
-            reports/performance_reports.json
-            reports/performance_reports.md
-            reports/retraining_decidion.json
-            reports/retraining_decidion.md
+            reports/performance_report.json
+            reports/performance_report.md
+            reports/retraining_decision.json
+            reports/retraining_decision.md
           if-no-files-found: ignore
           retention-days: 7
