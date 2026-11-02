@@ -1,0 +1,59 @@
+MODEL WORKSPACES — INSTALL IN YOUR EXISTING MODELOPS REPOSITORY
+
+Do NOT replace your original dashboard/app.py or existing src/modelops modules.
+
+1. Unzip the archive. Copy the folders/files from inside it into the ROOT
+   of your existing ~/Documents/modelops repo (merge, do not replace directories).
+   e.g. from the extraction directory:
+
+       cp src/modelops/model_workspace.py ~/Documents/modelops/src/modelops/
+       mkdir -p ~/Documents/modelops/dashboard/pages
+       cp dashboard/pages/1_Model_Workspaces.py ~/Documents/modelops/dashboard/pages/
+       cp scripts/*.py ~/Documents/modelops/scripts/
+       cp tests/test_model_workspace.py ~/Documents/modelops/tests/
+       cp docs/model_workspaces.md ~/Documents/modelops/docs/
+
+2. Add to your existing root requirements.txt:
+
+       skops>=0.11,<1
+
+   Add to your existing dashboard/requirements.txt:
+
+       numpy>=1.26,<3
+       scipy>=1.13,<2
+       scikit-learn>=1.5,<2
+       joblib>=1.3,<2
+       skops>=0.11,<1
+
+3. (Optional) Add `demo_uploads/` to .gitignore. Retain model binaries outside Git.
+
+4. Install, generate a completely different demo model, and test:
+
+       cd ~/Documents/modelops
+       source .venv/bin/activate
+       python -m pip install -r requirements.txt
+       python scripts/create_loan_demo.py
+       python -m pytest tests/test_model_workspace.py -v
+       python -m pytest -q
+       python -m streamlit run dashboard/app.py --server.port 8501
+
+5. Look for "Model Workspaces" in Streamlit sidebar and upload files from:
+
+       demo_uploads/loan_default/loan_default.skops
+       demo_uploads/loan_default/reference.csv
+       demo_uploads/loan_default/incoming.csv
+       demo_uploads/loan_default/delayed_labels.csv
+       demo_uploads/loan_default/validation.csv
+
+   ID column: record_id
+   Target column: target
+   Optional categorical model feature: late_payments
+
+6. Run monitoring -> train challenger -> inspect evaluation -> promote ONLY
+   if eligible -> download .skops / JSON or rollback.
+
+7. Commit code and tests after verifying they pass. Don't commit .venv,
+   sensitive CSVs, model binaries, session state or secrets. The public Render
+   service does not change when you promote a session model.
+
+See docs/model_workspaces.md for scope and security limitations.

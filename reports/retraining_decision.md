@@ -1,8 +1,8 @@
 # ModelOps — Retraining Decision
 
-- Run: `3290f6392f20`
+- Run: `67b56573337e`
 - Decision: **eligible**
-- Promotion: **promoted**
+- Promotion: **not_requested**
 - Historical training rows: **4000**
 - Incoming training rows: **960**
 
@@ -26,7 +26,7 @@
 
 - Champion: `/Users/user/Documents/modelops/artifacts/churn_model.joblib`
 - Candidate: `/Users/user/Documents/modelops/artifacts/candidates/churn_candidate.joblib`
-- Backup: `/Users/user/Documents/modelops/artifacts/archive/champion_20261027T011325Z_90f58f7b.joblib`
+- Backup: `none`
 
 ## Interpretation
 

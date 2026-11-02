@@ -308,6 +308,40 @@ It does not directly promote or replace models.
 The sample application uses synthetic customer data
 and is intended for engineering demonstration.
 
+
+
+## Live Demonstration
+
+**[Open the ModelOps Monitoring Workbench](https://modelops.streamlit.app)**
+
+**[Explore the Inference API](https://modelops-api.onrender.com/docs)**
+
+ModelOps is a machine-learning operations demonstration platform for customer churn prediction, model monitoring, experiment tracking, and guarded retraining.
+
+### Application Architecture
+
+The platform separates three main responsibilities:
+
+- **Model development and monitoring:** Python pipelines implement dataset generation, model training, feature drift analysis, delayed-label performance evaluation, and guarded retraining.
+- **Model serving:** FastAPI serves a reproducibly trained baseline classifier through validated prediction endpoints hosted on Render.
+- **Monitoring interface:** Streamlit Community Cloud displays example monitoring reports, model evaluations, retraining decisions, and live predictions.
+
+### Continuous Integration
+
+GitHub Actions automatically validates the project on Python 3.12, runs the automated test suite, reproduces the baseline model, and exercises the monitoring and inference pipelines.
+
+### Experiment Tracking
+
+MLflow provides local experiment comparison and candidate model registration. The MLflow tracking database and local model registry are not publicly hosted.
+
+### Deployment Limitations
+
+The public application uses synthetic customer data and is intended solely for engineering demonstration. Monitoring reports are offline-generated snapshots, not real-time production telemetry.
+
+The public inference backend serves a reproducibly trained baseline model. Local model promotions and MLflow registrations do not automatically update the deployed model.
+
+Free hosting services may experience cold starts and inactivity-related suspension.
+
 ### Limitations
 
 The API currently runs locally and uses synthetic
