@@ -147,7 +147,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("ModelOps Monitoring Workbench")
+st.title("Reference Model Monitoring")
 st.caption(
     "Portfolio demonstration using synthetic customer data."
     "Monitoring reports are generated snapshots, not live"
