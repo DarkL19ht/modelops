@@ -114,6 +114,12 @@ with st.sidebar:
     st.title("MODEL / OPS")
     st.caption("Machine Learning Operations")
 
+    st.page_link(
+            "pages/0_Try_Demo.py",
+            label="Try Demo — No sign-in required",
+            icon="🧪",
+        )
+
     st.divider()
 
     st.markdown("**Inference service**")
