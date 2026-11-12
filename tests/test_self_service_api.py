@@ -117,6 +117,11 @@ class FakeRegistry:
 
 @pytest.fixture
 def setup(monkeypatch):
+    # Allow both simulated accounts to exercise workspace operations.
+    monkeypatch.setenv(
+        "MODELOPS_TRUSTED_OPERATOR_EMAILS",
+        "a@example.org,b@example.org",
+    )
     rng = np.random.default_rng(43)
     features = pd.DataFrame({"age": rng.uniform(18, 80, 180), "debt": rng.uniform(0, 1, 180)})
     target = (features.age / 80 + features.debt > 1.1).astype(int)
