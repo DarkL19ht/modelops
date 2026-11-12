@@ -122,19 +122,13 @@ with st.sidebar:
 
     st.divider()
 
-    st.markdown("**Inference service**")
-    st.code(API_URL, language=None)
+    st.markdown("**Reference Model Monitoring**")
 
-    health = fetch_api("/health")
-
-    if health is not None:
-        st.success("Inference engine online")
-    else:
-        st.info(
-            "The inference engine is offline or waking up."
-            "On the current hosting, startup can take about a minute."
-            "Use Refresh reports to check again."
-        )
+    st.caption(
+        "This page displays the reference churn-model "
+        "monitoring workflow. Open My Models to manage "
+        "your own models and run predictions."
+    )
 
     st.divider()
 
