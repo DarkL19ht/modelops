@@ -11,11 +11,12 @@ import os
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.modelops.model_workspace import MAX_FILE_BYTES, Workspace, load_uploaded_model, read_csv
+from src.modelops.account_limits import RateLimitExceeded
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,17 @@ class Credentials(BaseModel):
     model_config = ConfigDict(extra="forbid")
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=12, max_length=128)
+
+
+class VerifyEmailInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: str = Field(min_length=3, max_length=254)
+    code: str = Field(pattern=r"^[0-9]{8}$")
+
+
+class ResendEmailInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: str = Field(min_length=3, max_length=254)
 
 
 class PredictItem(BaseModel):
@@ -64,7 +76,7 @@ def create_app(registry=None, auth=None) -> FastAPI:
         from src.modelops.self_service_registry import SelfServiceRegistry
         registry = SelfServiceRegistry()
     if auth is None:
-        from src.modelops.self_service_auth import AuthStore
+        from src.modelops.email_verification import VerifiedAuthStore as AuthStore
         auth = AuthStore()
 
     @asynccontextmanager
@@ -87,10 +99,22 @@ def create_app(registry=None, auth=None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from None
         except Exception as exc:
+            if isinstance(exc, RateLimitExceeded):
+                raise HTTPException(429, "Request limit reached. Please try again later") from None
             if getattr(exc, "sqlstate", None) == "23505":
                 raise HTTPException(409, "Account or workspace name already exists") from None
             logger.exception("ModelOps self-service operation failed")
             raise HTTPException(503, "Operation temporarily unavailable") from None
+
+    def limit_request(action: str, identity: str, limit: int, seconds: int):
+        if os.getenv("MODELOPS_RATE_LIMITS_ENABLED", "1") != "0":
+            if callable(getattr(auth, "enforce_limit", None)):
+                operation(auth.enforce_limit, action, identity, limit=limit, seconds=seconds)
+
+    def client_identity(request: Request) -> str:
+        # This is the trusted ASGI client address, not an arbitrary X-Forwarded-For header.
+        # Configure trusted proxy forwarding at the edge before relying on IP limits.
+        return request.client.host if request.client else "unknown"
 
     def bearer(authorization: str | None = Header(default=None)):
         prefix = "Bearer "
@@ -107,11 +131,31 @@ def create_app(registry=None, auth=None) -> FastAPI:
         return {"status": "ok"} if operation(registry.ping) else {"status": "unavailable"}
 
     @app.post("/auth/register", status_code=201)
-    def register(credentials: Credentials):
+    def register(credentials: Credentials, request: Request):
+        limit_request("registration-ip", client_identity(request), 4, 3600)
+        limit_request("registration-email", credentials.email.strip().lower(), 4, 3600)
+        verified_mode = os.getenv("MODELOPS_EMAIL_VERIFICATION_REQUIRED", "0") == "1"
+        if not verified_mode and not getattr(auth, "_test_stub", False):
+            # Never accidentally reopen public registration without verification.
+            raise HTTPException(503, "Verified registration is not configured")
         return operation(auth.register, credentials.email, credentials.password)
 
+    @app.post("/auth/verify-email")
+    def verify_email(item: VerifyEmailInput, request: Request):
+        limit_request("verify-ip", client_identity(request), 30, 3600)
+        limit_request("verify-email", item.email.strip().lower(), 10, 3600)
+        return operation(auth.verify_email, item.email, item.code)
+
+    @app.post("/auth/resend-verification")
+    def resend_verification(item: ResendEmailInput, request: Request):
+        limit_request("resend-ip", client_identity(request), 20, 3600)
+        limit_request("resend-email", item.email.strip().lower(), 6, 3600)
+        return operation(auth.resend_verification, item.email)
+
     @app.post("/auth/login")
-    def login(credentials: Credentials):
+    def login(credentials: Credentials, request: Request):
+        limit_request("login-ip", client_identity(request), 30, 3600)
+        limit_request("login-email", credentials.email.strip().lower(), 10, 3600)
         return operation(auth.login, credentials.email, credentials.password)
 
     @app.get("/auth/me")
@@ -140,6 +184,7 @@ def create_app(registry=None, auth=None) -> FastAPI:
         labels: UploadFile | None = File(default=None),
         validation: UploadFile | None = File(default=None),
     ):
+        limit_request("workspace-upload", user["id"], 3, 86400)
         model_bytes = await read_upload(model, ".skops")
         ref_bytes = await read_upload(reference, ".csv")
         inc_bytes = await read_upload(incoming, ".csv")
@@ -177,10 +222,12 @@ def create_app(registry=None, auth=None) -> FastAPI:
 
     @app.post("/my/workspaces/{wid}/monitor")
     def monitor(wid: str, opts: MonitorOptions, user=Depends(bearer)):
+        limit_request("monitor", user["id"], 30, 86400)
         return operation(registry.owned_monitor, user["id"], wid, threshold=opts.psi_threshold)
 
     @app.post("/my/workspaces/{wid}/train")
     def train(wid: str, opts: CandidateOptions, user=Depends(bearer)):
+        limit_request("training", user["id"], 3, 86400)
         return operation(registry.owned_train, user["id"], wid, min_f1_gain=opts.min_f1_gain)
 
     @app.post("/my/workspaces/{wid}/promote")
@@ -193,11 +240,13 @@ def create_app(registry=None, auth=None) -> FastAPI:
 
     @app.post("/my/workspaces/{wid}/predict")
     def predict(wid: str, item: PredictItem, version: int | None = Query(default=None, ge=1), user=Depends(bearer)):
+        limit_request("inference", user["id"], 300, 3600)
         result = operation(registry.owned_predict, user["id"], wid, [item.features], version=version)
         return {key: value for key, value in result.items() if key != "predictions"} | result["predictions"][0]
 
     @app.post("/my/workspaces/{wid}/predict/batch")
     def batch(wid: str, batch: PredictBatch, version: int | None = Query(default=None, ge=1), user=Depends(bearer)):
+        limit_request("inference", user["id"], 300, 3600)
         return operation(registry.owned_predict, user["id"], wid, [r.features for r in batch.rows], version=version)
 
     @app.get("/my/workspaces/{wid}/models/{version}/download")

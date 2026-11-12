@@ -5,23 +5,25 @@ An end-to-end machine learning engineering project
 focused on monitoring model performance, identifying
 data drift, and building reproducible retraining pipelines.
 
-## Project Overview
+## Live Application
 
-ModelOps simulates a customer churn prediction system
-where historical training data and incoming customer
-activity exhibit different distributions.
+[Explore the Interactive Demo](YOUR_DEMO_URL)
 
-The project will implement:
+[Open ModelOps](YOUR_APPLICATION_URL)
 
-- Reproducible data generation and model training
-- Data quality validation
-- Statistical drift detection
-- Model performance monitoring
-- Automated retraining and evaluation
-- Experiment tracking and model versioning
-- FastAPI model serving
-- A monitoring dashboard
-- Automated tests and CI
+ModelOps is a self-service machine-learning operations platform
+supporting model registration, inference, drift monitoring,
+performance evaluation, guarded retraining and version management.
+
+The interactive demonstration is available without registration
+and uses reproducible synthetic data.
+
+Registered users can manage their own model workspaces,
+upload compatible classifiers, generate predictions,
+evaluate challengers and download eligible model versions.
+
+Public model-upload access is currently restricted
+while additional security controls are implemented.
 
 ## Current Implementation
 

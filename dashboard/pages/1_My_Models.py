@@ -74,7 +74,28 @@ if SESSION_TOKEN not in st.session_state:
         if created:
             result = call("POST", "/auth/register", json={"email": email_new, "password": password_new})
             if result:
-                st.success("Account created. Sign in using the first tab.")
+                st.success("Check your email for an eight-digit verification code, then verify below.")
+    with st.expander("Verify email address", expanded=True):
+        with st.form("email_verification"):
+            verify_address = st.text_input("Registration email", key="ss_verify_address")
+            verify_code = st.text_input("Eight-digit verification code", max_chars=8,
+                                        key="ss_verify_code")
+            verify_submitted = st.form_submit_button("Verify email")
+        if verify_submitted:
+            result = call("POST", "/auth/verify-email", json={
+                "email": verify_address, "code": verify_code.strip(),
+            })
+            if result and result.get("verified"):
+                st.success("Email verified. You can now sign in.")
+
+    with st.expander("Resend verification code"):
+        with st.form("resend_email_verification"):
+            resend_address = st.text_input("Email", key="ss_resend_address")
+            resend_submitted = st.form_submit_button("Resend code")
+        if resend_submitted:
+            result = call("POST", "/auth/resend-verification", json={"email": resend_address})
+            if result:
+                st.info("If this address has a pending registration, a code will be sent.")
     st.stop()
 
 with st.sidebar:
