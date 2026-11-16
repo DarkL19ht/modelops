@@ -125,6 +125,7 @@ class SelfServiceRegistry:
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
             """)
+            conn.execute("ALTER TABLE ss_workspaces ADD COLUMN IF NOT EXISTS source_format TEXT NOT NULL DEFAULT 'legacy-skops'")
             conn.execute("CREATE INDEX IF NOT EXISTS ix_ss_events_workspace ON ss_events(workspace_id,id DESC)")
 
     def ping(self) -> bool:
@@ -139,6 +140,7 @@ class SelfServiceRegistry:
             "categorical": json.loads(row["categorical_json"]),
             "id_col": row["id_col"], "target_col": row["target_col"],
             "champion_version": row["champion_version"],
+            "source_format": row.get("source_format", "legacy-skops"),
             "rollback_version": row["rollback_version"],
             "created_at": row["created_at"].isoformat(),
         }
@@ -150,7 +152,18 @@ class SelfServiceRegistry:
             (wid, kind, _json(payload)),
         )
 
-    def register(self, workspace: Workspace, owner_id: str) -> str:
+    def is_portable_workspace(self, owner_id: str, wid: str) -> bool:
+        _check_id(wid)
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM ss_workspaces WHERE id=%s AND owner_id=%s AND source_format=%s",
+                (wid, owner_id, "portable-linear-v1"),
+            ).fetchone()
+            return row is not None
+
+    def register(self, workspace: Workspace, owner_id: str, *, source_format: str = "legacy-skops") -> str:
+        if source_format not in {"legacy-skops", "portable-linear-v1"}:
+            raise ValueError("Unsupported model source format")
         if not 1 <= len(workspace.name.strip()) <= 60:
             raise ValueError("Workspace name must be 1–60 characters")
         workspace.validate()
@@ -174,10 +187,10 @@ class SelfServiceRegistry:
                 raise ValueError("Maximum three workspaces per account")
             conn.execute("""
                 INSERT INTO ss_workspaces (
-                    id,name,owner_id,id_col,target_col,features_json,categorical_json,champion_version
-                ) VALUES(%s,%s,%s,%s,%s,%s,%s,1)
+                    id,name,owner_id,id_col,target_col,features_json,categorical_json,champion_version,source_format
+                ) VALUES(%s,%s,%s,%s,%s,%s,%s,1,%s)
             """, (wid, workspace.name.strip(), owner_id, workspace.id_col, workspace.target_col,
-                  _json(workspace.features), _json(workspace.categorical)))
+                  _json(workspace.features), _json(workspace.categorical), source_format))
             conn.execute("""
                 INSERT INTO ss_versions(workspace_id,version,status,model,sha256)
                 VALUES(%s,1,'champion',%s,%s)

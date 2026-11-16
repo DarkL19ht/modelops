@@ -119,6 +119,42 @@ upload_tab, manage_tab = st.tabs(["➕ Add my model", "📊 My workspaces"])
 
 with upload_tab:
     st.subheader("Upload a model and its datasets")
+    st.caption("Portable linear models can be uploaded by any verified account. "
+               "Legacy .skops uploads are limited to approved beta users.")
+    with st.expander("Upload a portable linear model", expanded=True):
+        st.write("Supports numeric binary logistic regression models exported as .modelops.json. "
+                 "See docs/portable_model_access.md for an exporter and example files.")
+        with st.form("portable_model_upload"):
+            portable_name = st.text_input("Workspace name", value="Loan Default", key="portable_name")
+            portable_model = st.file_uploader("Fitted portable model (.modelops.json)", type=["json"], key="portable_model")
+            portable_ref = st.file_uploader("Reference CSV", type=["csv"], key="portable_ref")
+            portable_inc = st.file_uploader("Incoming CSV", type=["csv"], key="portable_inc")
+            portable_labels = st.file_uploader("Delayed labels CSV (optional)", type=["csv"], key="portable_labels")
+            portable_validation = st.file_uploader("Historical holdout CSV (optional)", type=["csv"], key="portable_validation")
+            portable_id = st.text_input("ID column", value="record_id", key="portable_id")
+            portable_target = st.text_input("Target column", value="target", key="portable_target")
+            portable_submit = st.form_submit_button("Create my workspace", type="primary")
+        if portable_submit:
+            if not all((portable_model, portable_ref, portable_inc)):
+                st.error("The model, reference data and incoming data are required.")
+            elif not portable_model.name.lower().endswith(".modelops.json"):
+                st.error("The model must have the .modelops.json suffix.")
+            else:
+                files = {
+                    "model": (portable_model.name, portable_model.getvalue(), "application/json"),
+                    "reference": (portable_ref.name, portable_ref.getvalue(), "text/csv"),
+                    "incoming": (portable_inc.name, portable_inc.getvalue(), "text/csv"),
+                }
+                if portable_labels:
+                    files["labels"] = (portable_labels.name, portable_labels.getvalue(), "text/csv")
+                if portable_validation:
+                    files["validation"] = (portable_validation.name, portable_validation.getvalue(), "text/csv")
+                result = call("POST", "/my/portable-workspaces", files=files,
+                    data={"name": portable_name, "id_col": portable_id, "target_col": portable_target}, timeout=120)
+                if result:
+                    st.success("Model ready. Open My workspaces to predict, monitor and train challengers.")
+    st.divider()
+    st.caption("Legacy upload: .skops files are supported only for approved beta accounts.")
     st.write(
         "Your uploaded model becomes this workspace's champion immediately. "
         "You can make predictions as soon as registration succeeds. "
@@ -258,10 +294,35 @@ with manage_tab:
         st.caption("The challenger must improve incoming F1 and pass historical/incoming guardrails. "
                    "Your champion stays unchanged until you explicitly promote a better model.")
         gain = st.number_input("Minimum incoming F1 improvement", 0.0, 0.5, 0.01, step=0.01)
-        if st.button("Train and evaluate challenger", type="primary", key=f"ss_train_{wid}"):
-            result = call("POST", base + "/train", json={"min_f1_gain": gain}, timeout=180)
-            if result:
-                st.session_state[f"ss_last_candidate_{wid}"] = result
+        if os.getenv("MODELOPS_TRAINING_JOBS_ENABLED", "0") == "1":
+            if st.button("Queue challenger training", type="primary", key=f"ss_queue_{wid}"):
+                started = call("POST", base + "/training-jobs", json={"min_f1_gain": gain})
+                if started:
+                    st.session_state[f"ss_training_job_{wid}"] = started["job"]["id"]
+                    st.session_state.pop(f"ss_last_candidate_{wid}", None)
+            history = call("GET", base + "/training-jobs")
+            jobs = history.get("jobs", []) if history else []
+            job_id = st.session_state.get(f"ss_training_job_{wid}")
+            if not job_id and jobs:
+                job_id = jobs[0]["id"]
+            if job_id:
+                response = call("GET", f"/my/training-jobs/{job_id}")
+                if response:
+                    job = response["job"]
+                    st.write("**Training status:**", job["status"].title())
+                    if job["status"] in ("queued", "running"):
+                        st.info("Training is processing in the background. This page can be closed safely.")
+                        if st.button("Refresh training status", key=f"ss_refresh_job_{wid}"):
+                            st.rerun()
+                    elif job["status"] == "succeeded":
+                        st.session_state[f"ss_last_candidate_{wid}"] = job["result"]
+                    elif job["status"] in ("failed", "interrupted"):
+                        st.warning(job.get("error") or "Training did not complete. You can request a new job.")
+        else:
+            if st.button("Train and evaluate challenger", type="primary", key=f"ss_train_{wid}"):
+                result = call("POST", base + "/train", json={"min_f1_gain": gain}, timeout=180)
+                if result:
+                    st.session_state[f"ss_last_candidate_{wid}"] = result
         candidate = st.session_state.get(f"ss_last_candidate_{wid}")
         if candidate:
             if candidate["decision"]["eligible"]:

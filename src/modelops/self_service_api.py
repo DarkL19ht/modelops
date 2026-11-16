@@ -16,6 +16,8 @@ from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.modelops.model_workspace import MAX_FILE_BYTES, Workspace, load_uploaded_model, read_csv
+from starlette.concurrency import run_in_threadpool
+from src.modelops.execution_runner import isolated_enabled, run_isolated
 from src.modelops.account_limits import RateLimitExceeded
 
 logger = logging.getLogger(__name__)
@@ -79,16 +81,38 @@ def create_app(registry=None, auth=None) -> FastAPI:
         from src.modelops.email_verification import VerifiedAuthStore as AuthStore
         auth = AuthStore()
 
+    from src.modelops.training_jobs import TrainingJobStore
+    from src.modelops.training_job_routes import build_training_router
+    jobs = (TrainingJobStore() if os.getenv("MODELOPS_TRAINING_JOBS_ENABLED", "0") == "1"
+            and not getattr(registry, "_test_stub", False)
+            and not getattr(auth, "_test_stub", False) else None)
     @asynccontextmanager
     async def lifespan(app):
         if not hasattr(auth, "_test_stub"):
             auth.initialize()
         if not hasattr(registry, "_test_stub"):
             registry.initialize()
+        if jobs is not None:
+            jobs.initialize()
         yield
 
     app = FastAPI(title="ModelOps Self-Service API", version="0.1.0", lifespan=lifespan)
 
+    def require_beta_access(user):
+        raw = os.getenv("MODELOPS_TRUSTED_OPERATOR_EMAILS", "").strip()
+        if os.getenv("MODELOPS_PUBLIC_PORTABLE_MODE", "0") == "1" and not raw:
+            raise HTTPException(403, "Legacy model uploads are restricted; use a portable JSON model")
+        if raw:
+            permitted = {email.strip().lower() for email in raw.split(",") if email.strip()}
+            if user.get("email", "").strip().lower() not in permitted:
+                raise HTTPException(403, "Workspace processing is restricted during beta")
+
+    def require_workspace_access(user, wid):
+        if os.getenv("MODELOPS_PUBLIC_PORTABLE_MODE", "0") == "1":
+            method = getattr(registry, "is_portable_workspace", None)
+            if method is not None and operation(method, user["id"], wid):
+                return
+        require_beta_access(user)
     def operation(fn, *args, **kwargs):
         try:
             return fn(*args, **kwargs)
@@ -190,6 +214,15 @@ def create_app(registry=None, auth=None) -> FastAPI:
         inc_bytes = await read_upload(incoming, ".csv")
         label_bytes = await read_upload(labels, ".csv")
         validation_bytes = await read_upload(validation, ".csv")
+        require_beta_access(user)
+        if isolated_enabled() and not getattr(registry, "_test_stub", False):
+            return await run_in_threadpool(
+                lambda: operation(run_isolated, "register", owner_id=user["id"],
+                    name=name.strip(), id_col=id_col.strip(), target_col=target_col.strip(),
+                    categorical=[x.strip() for x in categorical.split(",") if x.strip()],
+                    model_bytes=model_bytes, ref_bytes=ref_bytes, inc_bytes=inc_bytes,
+                    label_bytes=label_bytes, validation_bytes=validation_bytes)
+            )
         try:
             workspace = Workspace(
                 name=name.strip(), champion=load_uploaded_model(model_bytes),
@@ -208,6 +241,56 @@ def create_app(registry=None, auth=None) -> FastAPI:
         wid = operation(registry.register, workspace, user["id"])
         return {"id": wid, "champion_version": 1, "message": "Your model is ready for predictions"}
 
+    @app.post("/my/portable-workspaces", status_code=201)
+    async def create_portable_workspace(
+        name: Annotated[str, Form(min_length=1, max_length=60)],
+        model: Annotated[UploadFile, File()],
+        reference: Annotated[UploadFile, File()],
+        incoming: Annotated[UploadFile, File()],
+        user=Depends(bearer),
+        id_col: str = Form("record_id"),
+        target_col: str = Form("target"),
+        categorical: str = Form(""),
+        labels: UploadFile | None = File(default=None),
+        validation: UploadFile | None = File(default=None),
+    ):
+        if os.getenv("MODELOPS_PUBLIC_PORTABLE_MODE", "0") != "1":
+            raise HTTPException(503, "Portable model registration is disabled")
+        if os.getenv("MODELOPS_EMAIL_VERIFICATION_REQUIRED", "0") != "1":
+            raise HTTPException(503, "Verified registration must be enabled")
+        if os.getenv("MODELOPS_RATE_LIMITS_ENABLED", "1") == "0":
+            raise HTTPException(503, "Request limits must be enabled")
+        if not isolated_enabled():
+            raise HTTPException(503, "Portable model worker is not configured")
+        if not model.filename or not model.filename.lower().endswith(".modelops.json"):
+            raise HTTPException(422, "Upload a .modelops.json model file")
+        limit_request("workspace-upload", user["id"], 3, 86400)
+        model_bytes = await read_upload(model, ".json")
+        from src.modelops.portable_models import load_portable_model
+        from starlette.concurrency import run_in_threadpool
+        if len(model_bytes) > 16 * 1024:
+            raise HTTPException(413, "Portable model must not exceed 16 KB")
+        try:
+            load_portable_model(model_bytes)  # data-only construction; no untrusted execution
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        ref_bytes = await read_upload(reference, ".csv")
+        inc_bytes = await read_upload(incoming, ".csv")
+        label_bytes = await read_upload(labels, ".csv")
+        validation_bytes = await read_upload(validation, ".csv")
+        for value in (ref_bytes, inc_bytes, label_bytes, validation_bytes):
+            if value is not None and len(value) > 512 * 1024:
+                raise HTTPException(413, "Each portable workspace dataset must not exceed 512 KB")
+        if not id_col.strip() or not target_col.strip():
+            raise HTTPException(422, "ID and target columns must be specified")
+        return await run_in_threadpool(
+            lambda: operation(run_isolated, "register_portable", owner_id=user["id"],
+                name=name.strip(), id_col=id_col.strip(), target_col=target_col.strip(),
+                categorical=[x.strip() for x in categorical.split(",") if x.strip()],
+                model_bytes=model_bytes, ref_bytes=ref_bytes, inc_bytes=inc_bytes,
+                label_bytes=label_bytes, validation_bytes=validation_bytes)
+        )
+
     @app.get("/my/workspaces/{wid}")
     def info(wid: str, user=Depends(bearer)):
         return operation(registry.owned_info, user["id"], wid)
@@ -223,30 +306,55 @@ def create_app(registry=None, auth=None) -> FastAPI:
     @app.post("/my/workspaces/{wid}/monitor")
     def monitor(wid: str, opts: MonitorOptions, user=Depends(bearer)):
         limit_request("monitor", user["id"], 30, 86400)
+        require_workspace_access(user, wid)
+        if isolated_enabled() and not getattr(registry, "_test_stub", False):
+            return operation(run_isolated, "monitor", owner_id=user["id"],
+                             workspace_id=wid, threshold=opts.psi_threshold)
         return operation(registry.owned_monitor, user["id"], wid, threshold=opts.psi_threshold)
 
     @app.post("/my/workspaces/{wid}/train")
     def train(wid: str, opts: CandidateOptions, user=Depends(bearer)):
         limit_request("training", user["id"], 3, 86400)
+        require_workspace_access(user, wid)
+        if isolated_enabled() and not getattr(registry, "_test_stub", False):
+            return operation(run_isolated, "train", owner_id=user["id"],
+                             workspace_id=wid, min_f1_gain=opts.min_f1_gain)
         return operation(registry.owned_train, user["id"], wid, min_f1_gain=opts.min_f1_gain)
 
     @app.post("/my/workspaces/{wid}/promote")
     def promote(wid: str, choice: PromotionChoice, user=Depends(bearer)):
+        require_workspace_access(user, wid)
+        if isolated_enabled() and not getattr(registry, "_test_stub", False):
+            return operation(run_isolated, "promote", owner_id=user["id"],
+                             workspace_id=wid, version=choice.version)
         return operation(registry.owned_promote, user["id"], wid, choice.version)
 
     @app.post("/my/workspaces/{wid}/rollback")
     def rollback(wid: str, user=Depends(bearer)):
+        require_workspace_access(user, wid)
+        if isolated_enabled() and not getattr(registry, "_test_stub", False):
+            return operation(run_isolated, "rollback", owner_id=user["id"],
+                             workspace_id=wid)
         return operation(registry.owned_rollback, user["id"], wid)
 
     @app.post("/my/workspaces/{wid}/predict")
     def predict(wid: str, item: PredictItem, version: int | None = Query(default=None, ge=1), user=Depends(bearer)):
         limit_request("inference", user["id"], 300, 3600)
+        require_workspace_access(user, wid)
+        if isolated_enabled() and not getattr(registry, "_test_stub", False):
+            isolated = operation(run_isolated, "predict", owner_id=user["id"],
+                                 workspace_id=wid, records=[item.features], version=version)
+            return {key: value for key, value in isolated.items() if key != "predictions"} | isolated["predictions"][0]
         result = operation(registry.owned_predict, user["id"], wid, [item.features], version=version)
         return {key: value for key, value in result.items() if key != "predictions"} | result["predictions"][0]
 
     @app.post("/my/workspaces/{wid}/predict/batch")
     def batch(wid: str, batch: PredictBatch, version: int | None = Query(default=None, ge=1), user=Depends(bearer)):
         limit_request("inference", user["id"], 300, 3600)
+        require_workspace_access(user, wid)
+        if isolated_enabled() and not getattr(registry, "_test_stub", False):
+            return operation(run_isolated, "predict", owner_id=user["id"],
+                             workspace_id=wid, records=[r.features for r in batch.rows], version=version)
         return operation(registry.owned_predict, user["id"], wid, [r.features for r in batch.rows], version=version)
 
     @app.get("/my/workspaces/{wid}/models/{version}/download")
@@ -258,6 +366,8 @@ def create_app(registry=None, auth=None) -> FastAPI:
                      "Cache-Control": "no-store"},
         )
 
+    if jobs is not None:
+        app.include_router(build_training_router(jobs, bearer, operation, limit_request, registry))
     return app
 
 
