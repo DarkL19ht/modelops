@@ -1,5 +1,6 @@
 """Self-service upload, monitor, retrain, download and predict for each signed-in user."""
 import io
+import logging
 import os
 import sys
 from pathlib import Path
@@ -11,6 +12,9 @@ if str(ROOT) not in sys.path:
 import pandas as pd
 import requests
 import streamlit as st
+from dashboard.api_feedback import describe_api_error
+
+logger = logging.getLogger(__name__)
 
 st.set_page_config(page_title="ModelOps | My Models", page_icon="🧠", layout="wide")
 st.title("My Models")
@@ -37,20 +41,25 @@ def call(method: str, path: str, *, data=None, files=None, params=None, json=Non
         )
         response.raise_for_status()
         return response.content if binary else response.json()
-    except requests.HTTPError as exc:
-        detail = ""
-        try:
-            detail = response.json().get("detail", "")
-        except (ValueError, AttributeError):
-            pass
-        if response.status_code == 401:
+    except requests.HTTPError:
+        status = response.status_code
+        logger.warning("API request failed: %s %s (%d)", method, path, status)
+        if status == 401 and path != "/auth/login":
             st.session_state.pop(SESSION_TOKEN, None)
             st.session_state.pop(SESSION_USER, None)
-        st.error(f"Request failed (HTTP {response.status_code}): {detail or str(exc)}")
-    except (requests.RequestException, ValueError) as exc:
-        st.error(f"Unable to contact ModelOps API: {type(exc).__name__}: {exc}")
+        message = describe_api_error(status, path)
+        if path == "/auth/register" and status == 409:
+            st.info(message)
+        else:
+            st.error(message)
+    except requests.Timeout:
+        st.error("ModelOps is taking longer than expected. Please try again shortly.")
+    except requests.RequestException:
+        logger.warning("API connectivity failure: %s %s", method, path)
+        st.error("We couldn't connect to ModelOps. Please check your connection and try again.")
+    except ValueError:
+        st.error("We received an unexpected response. Please try again shortly.")
     return None
-
 
 if SESSION_TOKEN not in st.session_state:
     st.info("Create your account or sign in to access your private model workspaces.")
@@ -74,7 +83,8 @@ if SESSION_TOKEN not in st.session_state:
         if created:
             result = call("POST", "/auth/register", json={"email": email_new, "password": password_new})
             if result:
-                st.success("Check your email for an eight-digit verification code, then verify below.")
+                st.info("If this email is eligible for registration, an eight-digit verification code will be sent. "
+                        "Already have an account? Use the Sign in tab instead.")
     with st.expander("Verify email address", expanded=True):
         with st.form("email_verification"):
             verify_address = st.text_input("Registration email", key="ss_verify_address")
@@ -110,20 +120,29 @@ with st.sidebar:
     if st.button("Refresh my workspaces"):
         st.rerun()
 
-st.warning(
-    "Supported models: binary scikit-learn classifiers with numerical input features (.skops). "
-    "Do not upload confidential or regulated datasets."
-)
+st.caption("Public uploads accept a restricted portable-model format. "
+           "Do not upload confidential or regulated datasets.")
 
 upload_tab, manage_tab = st.tabs(["➕ Add my model", "📊 My workspaces"])
 
 with upload_tab:
     st.subheader("Upload a model and its datasets")
-    st.caption("Portable linear models can be uploaded by any verified account. "
-               "Legacy .skops uploads are limited to approved beta users.")
-    with st.expander("Upload a portable linear model", expanded=True):
-        st.write("Supports numeric binary logistic regression models exported as .modelops.json. "
-                 "See docs/portable_model_access.md for an exporter and example files.")
+    st.caption("Verified accounts can upload supported portable models without manual approval. "
+               "Standard .skops uploads remain part of the controlled beta.")
+    with st.expander("Upload a model · Public access", expanded=True):
+        st.caption("Currently supported: numeric binary logistic regression models in portable JSON format.")
+        st.info("Have a .skops model? That is a different format. Renaming the file will not convert it. "
+                "Use the export instructions for a model you trust, or try the sample model below.")
+        st.markdown("[Model format, export instructions and sample files]"
+                    "(https://github.com/DarkL19ht/modelops/blob/main/docs/portable_model_access.md)")
+        st.caption("Only supported fitted logistic regression models can be exported. "
+                   "Never load unknown model files just to convert them.")
+        sample_zip = ROOT / "dashboard" / "assets" / "modelops_employer_starter_files.zip"
+        if sample_zip.is_file():
+            st.download_button("Download sample model and datasets",
+                               data=sample_zip.read_bytes(),
+                               file_name="modelops_employer_starter_files.zip",
+                               mime="application/zip")
         with st.form("portable_model_upload"):
             portable_name = st.text_input("Workspace name", value="Loan Default", key="portable_name")
             portable_model = st.file_uploader("Fitted portable model (.modelops.json)", type=["json"], key="portable_model")
@@ -138,7 +157,8 @@ with upload_tab:
             if not all((portable_model, portable_ref, portable_inc)):
                 st.error("The model, reference data and incoming data are required.")
             elif not portable_model.name.lower().endswith(".modelops.json"):
-                st.error("The model must have the .modelops.json suffix.")
+                st.error("This upload requires a portable .modelops.json file. "
+                             "An ordinary .skops file cannot be renamed to this format.")
             else:
                 files = {
                     "model": (portable_model.name, portable_model.getvalue(), "application/json"),
@@ -154,46 +174,47 @@ with upload_tab:
                 if result:
                     st.success("Model ready. Open My workspaces to predict, monitor and train challengers.")
     st.divider()
-    st.caption("Legacy upload: .skops files are supported only for approved beta accounts.")
-    st.write(
-        "Your uploaded model becomes this workspace's champion immediately. "
-        "You can make predictions as soon as registration succeeds. "
-        "Delayed labels and a separate holdout are needed only for training a challenger."
-    )
-    with st.form("ss_upload", clear_on_submit=False):
-        name = st.text_input("Model/workspace name", value="Loan Default", max_chars=60)
-        model_file = st.file_uploader("My fitted model (.skops)", type=["skops"])
-        ref_file = st.file_uploader("Reference data (.csv)", type=["csv"], key="ss_ref")
-        new_file = st.file_uploader("New incoming features (.csv; no target)", type=["csv"], key="ss_inc")
-        label_file = st.file_uploader("Delayed incoming labels (.csv; optional for monitoring)", type=["csv"], key="ss_labels")
-        val_file = st.file_uploader("Independent historical holdout (.csv; required for retraining)", type=["csv"], key="ss_val")
-        c1, c2 = st.columns(2)
-        id_col = c1.text_input("ID column", value="record_id")
-        target_col = c2.text_input("Binary target column", value="target")
-        categorical = st.text_input("Categorical feature names (comma-separated, optional)")
-        uploaded = st.form_submit_button("Create my workspace", type="primary")
-    if uploaded:
-        if model_file is None or ref_file is None or new_file is None:
-            st.error("Your model, reference data and incoming data are required.")
-        elif any(f is not None and f.size > 5 * 1024 * 1024 for f in
-                 (model_file, ref_file, new_file, label_file, val_file)):
-            st.error("Each file must be 5 MB or smaller.")
-        else:
-            upload_files = {
-                "model": (model_file.name, model_file.getvalue(), "application/octet-stream"),
-                "reference": (ref_file.name, ref_file.getvalue(), "text/csv"),
-                "incoming": (new_file.name, new_file.getvalue(), "text/csv"),
-            }
-            if label_file:
-                upload_files["labels"] = (label_file.name, label_file.getvalue(), "text/csv")
-            if val_file:
-                upload_files["validation"] = (val_file.name, val_file.getvalue(), "text/csv")
-            result = call("POST", "/my/workspaces", files=upload_files,
-                          data={"name": name, "id_col": id_col,
-                                "target_col": target_col, "categorical": categorical}, timeout=120)
-            if result:
-                st.success("Your model is uploaded. Open 'My workspaces' to run predictions and monitoring.")
-                st.caption(f'Workspace ID: {result["id"]}')
+    with st.expander("Advanced · .skops upload (restricted beta)", expanded=False):
+        st.caption("Legacy upload: .skops files are supported only for approved beta accounts.")
+        st.write(
+            "Your uploaded model becomes this workspace's champion immediately. "
+            "You can make predictions as soon as registration succeeds. "
+            "Delayed labels and a separate holdout are needed only for training a challenger."
+        )
+        with st.form("ss_upload", clear_on_submit=False):
+            name = st.text_input("Model/workspace name", value="Loan Default", max_chars=60)
+            model_file = st.file_uploader("My fitted model (.skops)", type=["skops"])
+            ref_file = st.file_uploader("Reference data (.csv)", type=["csv"], key="ss_ref")
+            new_file = st.file_uploader("New incoming features (.csv; no target)", type=["csv"], key="ss_inc")
+            label_file = st.file_uploader("Delayed incoming labels (.csv; optional for monitoring)", type=["csv"], key="ss_labels")
+            val_file = st.file_uploader("Independent historical holdout (.csv; required for retraining)", type=["csv"], key="ss_val")
+            c1, c2 = st.columns(2)
+            id_col = c1.text_input("ID column", value="record_id")
+            target_col = c2.text_input("Binary target column", value="target")
+            categorical = st.text_input("Categorical feature names (comma-separated, optional)")
+            uploaded = st.form_submit_button("Create my workspace", type="primary")
+        if uploaded:
+            if model_file is None or ref_file is None or new_file is None:
+                st.error("Your model, reference data and incoming data are required.")
+            elif any(f is not None and f.size > 5 * 1024 * 1024 for f in
+                     (model_file, ref_file, new_file, label_file, val_file)):
+                st.error("Each file must be 5 MB or smaller.")
+            else:
+                upload_files = {
+                    "model": (model_file.name, model_file.getvalue(), "application/octet-stream"),
+                    "reference": (ref_file.name, ref_file.getvalue(), "text/csv"),
+                    "incoming": (new_file.name, new_file.getvalue(), "text/csv"),
+                }
+                if label_file:
+                    upload_files["labels"] = (label_file.name, label_file.getvalue(), "text/csv")
+                if val_file:
+                    upload_files["validation"] = (val_file.name, val_file.getvalue(), "text/csv")
+                result = call("POST", "/my/workspaces", files=upload_files,
+                              data={"name": name, "id_col": id_col,
+                                    "target_col": target_col, "categorical": categorical}, timeout=120)
+                if result:
+                    st.success("Your model is uploaded. Open 'My workspaces' to run predictions and monitoring.")
+                    st.caption(f'Workspace ID: {result["id"]}')
 
 with manage_tab:
     listing = call("GET", "/my/workspaces")
