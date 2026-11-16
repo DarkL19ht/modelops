@@ -7,9 +7,22 @@ data drift, and building reproducible retraining pipelines.
 
 ## Live Application
 
-[Explore the Interactive Demo](YOUR_DEMO_URL)
+## ModelOps Dashboard
 
-[Open ModelOps](YOUR_APPLICATION_URL)
+<p align="center">
+  <img
+    src="docs/images/modelops-dashboard.png"
+    alt="ModelOps Dashboard"
+    width="800"
+  >
+</p>
+
+The ModelOps dashboard provides an interactive interface for monitoring model performance, detecting data drift, and managing the model lifecycle.
+  
+
+**[Launch ModelOps](https://modelops.streamlit.app)**
+
+**[Explore the Inference API](https://modelops-api.onrender.com/docs)**
 
 ModelOps is a self-service machine-learning operations platform
 supporting model registration, inference, drift monitoring,
@@ -25,14 +38,16 @@ evaluate challengers and download eligible model versions.
 Public model-upload access is currently restricted
 while additional security controls are implemented.
 
-## Current Implementation
+## Key Capabilities
 
-- Synthetic customer data generator
-- Reference and shifted incoming datasets
-- Baseline logistic regression classifier
-- Train/test evaluation
-- Saved model and evaluation metrics
-- Initial automated tests
+- Reproducible model training using synthetic customer data
+- Data drift detection using PSI and KS statistical tests
+- Model performance monitoring and evaluation
+- Champion-challenger retraining with guarded promotion
+- Experiment tracking and candidate registration using MLflow
+- REST API development and model serving using FastAPI
+- Interactive monitoring dashboard using Streamlit
+- Automated testing and CI using pytest and GitHub Actions
 
 
 ## Data Drift Monitoring
@@ -55,6 +70,7 @@ The monitoring engine implements:
 
 ```bash
 python -m src.modelops.monitor
+```
 
 ## Getting Started
 
@@ -87,9 +103,9 @@ python -m src.modelops.performance
 
 ### Monitoring Outputs
 
-- 'reports/performance_report.md'
-- 'repprts/performance_report.json'
-- 'reports/performance_history.jsonl'
+- `reports/performance_report.md`
+- `reports/performance_report.json`
+- `reports/performance_history.jsonl`
 
 
 The demonstration uses fully labeled synthetic cohorts.
@@ -312,13 +328,7 @@ and is intended for engineering demonstration.
 
 
 
-## Live Demonstration
-
-**[Open the ModelOps Monitoring Workbench](https://modelops.streamlit.app)**
-
-**[Explore the Inference API](https://modelops-api.onrender.com/docs)**
-
-ModelOps is a machine-learning operations demonstration platform for customer churn prediction, model monitoring, experiment tracking, and guarded retraining.
+#### Architecture and Deployment
 
 ### Application Architecture
 
@@ -346,9 +356,15 @@ Free hosting services may experience cold starts and inactivity-related suspensi
 
 ### Limitations
 
-The API currently runs locally and uses synthetic
-training data. Its predictions should not be used
-to make real customer decisions.
+The FastAPI service can run locally, and a separate
+public deployment serves a reproducibly trained baseline
+model on Render.
+
+Local model promotions and MLflow registrations do not
+automatically update the public deployment.
+
+The system uses synthetic customer data and is intended
+for engineering demonstrations, not real-world decisions.
 
 The admin reload endpoint uses a shared token,
 and additional authentication, auditing, rate
